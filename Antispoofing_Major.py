@@ -303,7 +303,7 @@ cap.set(4, 720)  # Height
 model = YOLO("../models/yolov8n.pt")  # Use correct YOLO model
 
 # Define class names (Adjust as per model classes)
-classNames = ["person", "Phone"]
+classNames = ["Real", "Fake"]
 
 prev_frame_time = 0
 
