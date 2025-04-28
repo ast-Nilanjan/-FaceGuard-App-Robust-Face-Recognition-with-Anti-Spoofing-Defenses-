@@ -437,6 +437,101 @@ if __name__ == "__main__":
 
 
 
+						#-------------Streamlit--------------#
+import streamlit as st
+st.set_page_config(page_title="Face Login System", layout="centered")  # First Streamlit call
+
+import cv2
+from ultralytics import YOLO
+import os
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+import time
+
+# Load YOLO model
+yolo_model = YOLO("models/best_280.pt")
+classNames = ["Fake", "Real"]
+
+# Dataset of real faces
+KNOWN_FACE_DIR = "Testing Scripts/Dataset/Real"
+
+# Feature extraction (simple flattened vector)
+def extract_features(image):
+    image = cv2.resize(image, (100, 100))
+    return image.flatten() / 255.0
+
+# Load known real faces
+@st.cache_data
+def load_known_faces():
+    faces = {}
+    for file in os.listdir(KNOWN_FACE_DIR):
+        if file.lower().endswith((".jpg")):
+            img = cv2.imread(os.path.join(KNOWN_FACE_DIR, file))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            name = os.path.splitext(file)[0]
+            faces[name] = extract_features(img)
+    return faces
+
+known_faces = load_known_faces()
+
+# Match face
+def match_face(embedding, known_faces, threshold=0.8):
+    for name, db_embedding in known_faces.items():
+        similarity = cosine_similarity([embedding], [db_embedding])[0][0]
+        if similarity > threshold:
+            return name, similarity
+    return None, None
+
+# Streamlit UI
+st.title("🔐  Face Login System")
+
+if st.button("📸 Capture & Authenticate"):
+    cap = cv2.VideoCapture(0)
+    time.sleep(2)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+        st.error("❌ Failed to capture image from webcam.")
+    else:
+        detected_face_crop = None
+        label = None
+
+        results = yolo_model(frame, stream=False)
+        for r in results:
+            for box in r.boxes:
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                if conf > 0.8:
+                    label = classNames[cls]
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    detected_face_crop = frame[y1:y2, x1:x2]
+
+                    color = (0, 255, 0) if label == "Real" else (0, 0, 255)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(frame, f"{label} {int(conf * 100)}%", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                    break  # Use first detection only
+
+        st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), caption="Detection Result", use_container_width=True)
+
+        if label == "Real" and detected_face_crop is not None:
+            captured_embedding = extract_features(detected_face_crop)
+            user, score = match_face(captured_embedding, known_faces)
+
+            if user:
+                st.success(f"✅ Welcome {user}! (Match: {score:.2f})")
+                st.subheader("🏠 Home Page")
+                st.markdown("You are now logged in successfully!")
+            else:
+                st.error("❌ Face is real, but not found in the dataset.")
+        elif label == "Fake":
+            st.error("🚫 Fake face detected. Access denied.")
+        else:
+            st.warning("⚠️ No valid face detected. Try again.")
+
+
+
 
 
 
